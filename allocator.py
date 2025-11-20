@@ -1,7 +1,10 @@
+#! /usr/bin/env python
+
 from __future__ import print_function
 import random
 from optparse import OptionParser
 
+# to make Python2 and Python3 act the same -- how dumb
 def random_seed(seed):
     try:
         random.seed(seed, version=1)
@@ -9,45 +12,41 @@ def random_seed(seed):
         random.seed(seed)
     return
 
-class Allocator:
+class malloc:
     def __init__(self, size, start, headerSize, policy, order, coalesce, align):
         # size of space
-        self.size = size
-
-        # fake headers
-        self.headerSize = headerSize
+        self.size        = size
+        
+        # info about pretend headers
+        self.headerSize  = headerSize
 
         # init free list
-        self.freelist = [] 
+        self.freelist    = []
         self.freelist.append((start, size))
-        
-        # track ptr to size mappings
-        self.sizemap = {}
-        
-        #policy
-        self.policy = policy
-            # assert checks if statement is true. if false halts program
-            #   here it has a list of strings, and compares self.policy to
-            #       the strings in the list
+
+        # keep track of ptr to size mappings
+        self.sizemap     = {}
+
+        # policy
+        self.policy       = policy
         assert(self.policy in ['FIRST', 'BEST', 'WORST'])
 
         # list ordering
         self.returnPolicy = order
-        assert(self.returnPolicy in ['ADDSORT', 'SIZESORT+', 'SIZESORT-', 'INSERT-FRONT', 'INSERT-BACK'])
+        assert(self.returnPolicy in ['ADDRSORT', 'SIZESORT+', 'SIZESORT-', 'INSERT-FRONT', 'INSERT-BACK'])
 
-        # full list coalesce
-        self.coalese = coalesce
+        # this does a ridiculous full-list coalesce, but that is ok
+        self.coalesce     = coalesce
 
-        # alignment (will be -1 if no alignment)
-        self.align = align
-        # we do not want 0 or any negative other than -1
+        # alignment (-1 if no alignment)
+        self.align        = align
         assert(self.align == -1 or self.align > 0)
 
     def addToMap(self, addr, size):
         assert(addr not in self.sizemap)
         self.sizemap[addr] = size
-        #prints "adding", addr, "to map of size", size
-
+        # print('adding', addr, 'to map of size', size)
+        
     def malloc(self, size):
         if self.align != -1:
             left = size % self.align
@@ -55,47 +54,52 @@ class Allocator:
                 diff = self.align - left
             else:
                 diff = 0
+            # print('aligning: adding %d to %d' % (diff, size))
             size += diff
 
         size += self.headerSize
-        
-        bestIdx = -1
+
+        bestIdx  = -1
         if self.policy == 'BEST':
             bestSize = self.size + 1
         elif self.policy == 'WORST' or self.policy == 'FIRST':
             bestSize = -1
 
         count = 0
-
+            
         for i in range(len(self.freelist)):
             eaddr, esize = self.freelist[i][0], self.freelist[i][1]
-            count += 1
-            if esize >= size and ((self.policy == 'BEST' and esize < bestSize) or
+            count   += 1
+            if esize >= size and ((self.policy == 'BEST'  and esize < bestSize) or
                                   (self.policy == 'WORST' and esize > bestSize) or
                                   (self.policy == 'FIRST')):
                 bestAddr = eaddr
                 bestSize = esize
-                bestIdx = i
+                bestIdx  = i
                 if self.policy == 'FIRST':
                     break
 
-            if bestIdx != -1:
-                if bestSize > size:
-                    self.freelist[bestIdx] = (bestAddr + size, bestSize - size)
-                    self.addToMap(bestAddr, size)
-                elif bestSize == size:
-                    self.freelist.pop(bestIdx)
-                    self.addToMap(bestAddr, size)
-                else:
-                    abort('should never get here')
-                return (bestAddr, count)
-            
-            return (-1, count)
+        if bestIdx != -1:
+            if bestSize > size:
+                # print('SPLIT', bestAddr, size)
+                self.freelist[bestIdx] = (bestAddr + size, bestSize - size)
+                self.addToMap(bestAddr, size)
+            elif bestSize == size:
+                # print('PERFECT MATCH (no split)', bestAddr, size)
+                self.freelist.pop(bestIdx)
+                self.addToMap(bestAddr, size)
+            else:
+                abort('should never get here')
+            return (bestAddr, count)
+
+        # print('*** FAILED TO FIND A SPOT', size)
+        return (-1, count)
 
     def free(self, addr):
         # simple back on end of list, no coalesce
         if addr not in self.sizemap:
             return -1
+            
         size = self.sizemap[addr]
         if self.returnPolicy == 'INSERT-BACK':
             self.freelist.append((addr, size))
@@ -126,21 +130,21 @@ class Allocator:
             self.freelist = self.newlist
             
         del self.sizemap[addr]
-        return 0 
-    
-    # prints free list showing quantity of free blocks, their respective addresses, and sizes.
+        return 0
+
     def dump(self):
         print('Free List [ Size %d ]: ' % len(self.freelist), end='')
         for e in self.freelist:
-            print('[ addr:%d sz:%d ]' % (e[0], e[1]), end='') 
+            print('[ addr:%d sz:%d ]' % (e[0], e[1]), end='')
         print('')
+
 
 #
 # main program
 #
 parser = OptionParser()
 
-parser.add_option('-s', '--seed',        default=0;          help='the random seed',                             action='store', type='int',    dest='seed')
+parser.add_option('-s', '--seed',        default=0,          help='the random seed',                             action='store', type='int',    dest='seed')
 parser.add_option('-S', '--size',        default=100,        help='size of the heap',                            action='store', type='int',    dest='heapSize') 
 parser.add_option('-b', '--baseAddr',    default=1000,       help='base address of heap',                        action='store', type='int',    dest='baseAddr') 
 parser.add_option('-H', '--headerSize',  default=0,          help='size of the header',                          action='store', type='int',    dest='headerSize')
@@ -156,7 +160,7 @@ parser.add_option('-c', '--compute',     default=False,      help='compute answe
 
 (options, args) = parser.parse_args()
 
-m = Allocator(int(options.heapSize), int(options.baseAddr), int(options.headerSize),
+m = malloc(int(options.heapSize), int(options.baseAddr), int(options.headerSize),
            options.policy, options.order, options.coalesce, options.alignment)
 
 print('seed', options.seed)
