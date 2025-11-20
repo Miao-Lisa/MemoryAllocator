@@ -1,5 +1,13 @@
+from __future__ import print_function
 import random
 from optparse import OptionParser
+
+def random_seed(seed):
+    try:
+        random.seed(seed, version=1)
+    except:
+        random.seed(seed)
+    return
 
 class Allocator:
     def __init__(self, size, start, headerSize, policy, order, coalesce, align):
@@ -88,7 +96,6 @@ class Allocator:
         # simple back on end of list, no coalesce
         if addr not in self.sizemap:
             return -1
-            
         size = self.sizemap[addr]
         if self.returnPolicy == 'INSERT-BACK':
             self.freelist.append((addr, size))
@@ -126,4 +133,126 @@ class Allocator:
         print('Free List [ Size %d ]: ' % len(self.freelist), end='')
         for e in self.freelist:
             print('[ addr:%d sz:%d ]' % (e[0], e[1]), end='') 
+        print('')
+
+#
+# main program
+#
+parser = OptionParser()
+
+parser.add_option('-s', '--seed',        default=0;          help='the random seed',                             action='store', type='int',    dest='seed')
+parser.add_option('-S', '--size',        default=100,        help='size of the heap',                            action='store', type='int',    dest='heapSize') 
+parser.add_option('-b', '--baseAddr',    default=1000,       help='base address of heap',                        action='store', type='int',    dest='baseAddr') 
+parser.add_option('-H', '--headerSize',  default=0,          help='size of the header',                          action='store', type='int',    dest='headerSize')
+parser.add_option('-a', '--alignment',   default=-1,         help='align allocated units to size; -1->no align', action='store', type='int',    dest='alignment')
+parser.add_option('-p', '--policy',      default='BEST',     help='list search (BEST, WORST, FIRST)',            action='store', type='string', dest='policy') 
+parser.add_option('-l', '--listOrder',   default='ADDRSORT', help='list order (ADDRSORT, SIZESORT+, SIZESORT-, INSERT-FRONT, INSERT-BACK)', action='store', type='string', dest='order') 
+parser.add_option('-C', '--coalesce',    default=False,      help='coalesce the free list?',                     action='store_true',           dest='coalesce')
+parser.add_option('-n', '--numOps',      default=10,         help='number of random ops to generate',            action='store', type='int',    dest='opsNum')
+parser.add_option('-r', '--range',       default=10,         help='max alloc size',                              action='store', type='int',    dest='opsRange')
+parser.add_option('-P', '--percentAlloc',default=50,         help='percent of ops that are allocs',              action='store', type='int',    dest='opsPAlloc')
+parser.add_option('-A', '--allocList',   default='',         help='instead of random, list of ops (+10,-0,etc)', action='store', type='string', dest='opsList')
+parser.add_option('-c', '--compute',     default=False,      help='compute answers for me',                      action='store_true',           dest='solve')
+
+(options, args) = parser.parse_args()
+
+m = Allocator(int(options.heapSize), int(options.baseAddr), int(options.headerSize),
+           options.policy, options.order, options.coalesce, options.alignment)
+
+print('seed', options.seed)
+print('size', options.heapSize)
+print('baseAddr', options.baseAddr)
+print('headerSize', options.headerSize)
+print('alignment', options.alignment)
+print('policy', options.policy)
+print('listOrder', options.order)
+print('coalesce', options.coalesce)
+print('numOps', options.opsNum)
+print('range', options.opsRange)
+print('percentAlloc', options.opsPAlloc)
+print('allocList', options.opsList)
+print('compute', options.solve)
+print('')
+
+percent = int(options.opsPAlloc) / 100.0
+
+random_seed(int(options.seed))
+p = {}
+L = []
+assert(percent > 0)
+
+if options.opsList == '':
+    c = 0
+    j = 0
+    while j < int(options.opsNum):
+        pr = False
+        if random.random() < percent:
+            size     = int(random.random() * int(options.opsRange)) + 1
+            ptr, cnt = m.malloc(size)
+            if ptr != -1:
+                p[c] = ptr
+                L.append(c)
+            print('ptr[%d] = Alloc(%d)' % (c, size), end='')
+            if options.solve == True:
+                print(' returned %d (searched %d elements)' % (ptr + options.headerSize, cnt))
+            else:
+                print(' returned ?')
+            c += 1
+            j += 1
+            pr = True
+        else:
+            if len(p) > 0:
+                # pick random one to delete
+                d = int(random.random() * len(L))
+                rc = m.free(p[L[d]])
+                print('Free(ptr[%d])' % L[d], )
+                if options.solve == True:
+                    print('returned %d' % rc)
+                else:
+                    print('returned ?')
+                del p[L[d]]
+                del L[d]
+                # print('DEBUG p', p)
+                # print('DEBUG L', L)
+                pr = True
+                j += 1
+        if pr:
+            if options.solve == True:
+                m.dump()
+            else:
+                print('List? ')
+            print('')
+else:
+    c = 0
+    for op in options.opsList.split(','):
+        if op[0] == '+':
+            # allocation!
+            size     = int(op.split('+')[1])
+            ptr, cnt = m.malloc(size)
+            if ptr != -1:
+                p[c] = ptr
+            print('ptr[%d] = Alloc(%d)' % (c, size), end='')
+            if options.solve == True:
+                print(' returned %d (searched %d elements)' % (ptr, cnt))
+            else:
+                print(' returned ?')
+            c += 1
+        elif op[0] == '-':
+            # free
+            index = int(op.split('-')[1])
+            if index >= len(p):
+                print('Invalid Free: Skipping')
+                continue
+            print('Free(ptr[%d])' % index, )
+            rc = m.free(p[index])
+            if options.solve == True:
+                print('returned %d' % rc)
+            else:
+                print('returned ?')
+        else:
+            abort('badly specified operand: must be +Size or -Index')
+        if options.solve == True:
+            m.dump()
+        else:
+            print('List?')
         print('')
